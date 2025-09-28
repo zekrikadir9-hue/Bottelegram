@@ -8,9 +8,8 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 from telegram.constants import ParseMode
 
 # === إعدادات البيئة ===
-# الحل: يجب أن يقرأ البوت المنفذ الفعلي الذي توفره البيئة، والذي قد يكون 10000.
-# إذا كان متغير البيئة PORT موجودًا، سيتم استخدامه. وإلا فسيستخدم 8080 كافتراضي.
-LISTEN_PORT = int(os.environ.get('PORT', 8080))
+# *التصحيح الرئيسي*: نستخدم 10000 كمنفذ افتراضي، لأنه هو المنفذ القياسي الذي تبحث عنه Render.
+LISTEN_PORT = int(os.environ.get('PORT', 10000))
 
 # اسم النطاق الخارجي (مثل: your-service-name.onrender.com)
 RENDER_EXTERNAL_HOSTNAME = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
@@ -22,11 +21,14 @@ SUPPORT_EMAIL = "kaderezakariaa@gmail.com"
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# التحقق من المتغيرات قبل الاستمرار
 if not TOKEN:
     logger.error("خطأ فادح: لم يتم العثور على توكن البوت في متغيرات البيئة.")
     sys.exit(1)
 
 # === البيانات والقيم الثابتة ===
+# ملاحظة: هذه الطريقة (user_balances كقاموس في الذاكرة) ستفقد جميع البيانات عند كل إعادة تشغيل.
+# يُفضل استخدام قاعدة بيانات (مثل PostgreSQL أو Redis) لحفظ أرصدة المستخدمين بشكل دائم.
 user_balances = {}
 PRICES = {'watch_video': 50, 'browse_web': 30, 'play_games': 20}
 MIN_WITHDRAWAL = 500
@@ -46,8 +48,12 @@ def get_main_keyboard() -> InlineKeyboardMarkup:
 # === معالجات الأوامر والردود التلقائية ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """معالج أمر /start."""
-    chat = update.message or update.callback_query.message
-    user_id = chat.from_user.id
+    # نستخدم update.effective_chat للتأكد من الحصول على الدردشة سواء كانت رسالة أو استدعاء زر
+    chat = update.effective_chat
+    if not chat:
+        return
+    user_id = chat.id
+    
     if user_id not in user_balances:
         user_balances[user_id] = 0
     balance = user_balances[user_id]
@@ -55,7 +61,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message_text = f"""مرحباً بك! رصيدك الحالي هو: **{balance} د.ج**.
 اختر الخدمة التي تريدها:"""
     
-    await chat.reply_text(message_text, reply_markup=get_main_keyboard(), parse_mode=ParseMode.MARKDOWN)
+    # نستخدم chat.send_message بدلاً من reply_text في حالة الـ webhook
+    await context.bot.send_message(
+        chat_id=chat.id, 
+        text=message_text, 
+        reply_markup=get_main_keyboard(), 
+        parse_mode=ParseMode.MARKDOWN
+    )
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """معالج ضغطات الأزرار (Callback Queries)."""
@@ -98,6 +110,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.edit_message_text(message, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
         
     elif data == 'request_withdrawal':
+        # يفضل هنا إضافة منطق لتخزين الطلب ومعالجة السحب
         await query.edit_message_text("✅ تم تسجيل طلب السحب! سيتم التواصل معك قريباً على حسابك في تيليجرام لإتمام عملية الدفع.")
         
     elif data == 'support_contact':
@@ -127,15 +140,18 @@ def main() -> None:
         logger.error("خطأ: لم يتم العثور على RENDER_EXTERNAL_HOSTNAME. الرجاء تعيينه في إعدادات Render.")
         sys.exit(1)
         
+    # *تعديل*: التأكد من أن url_path هو مسار سري وليس بالضرورة التوكن الكامل،
+    # لكن سنبقي على التوكن لأن كودك استخدمه.
+    webhook_path = TOKEN
     webhook_url = f"https://{RENDER_EXTERNAL_HOSTNAME}"
-
-    # استخدام LISTEN_PORT المُعرَّف في بداية الكود 
-    logger.info(f"بدء تشغيل البوت على Webhook: {webhook_url}/{TOKEN}، منفذ الاستماع: {LISTEN_PORT}")
+    
+    # استخدام LISTEN_PORT المُعدَّل
+    logger.info(f"بدء تشغيل البوت على Webhook: {webhook_url}/{webhook_path}، منفذ الاستماع: {LISTEN_PORT}")
     
     application.run_webhook(
         listen='0.0.0.0',
-        port=LISTEN_PORT,     # تم التعديل لاستخدام LISTEN_PORT
-        url_path=TOKEN,        
+        port=LISTEN_PORT,     # الآن هو 10000 افتراضيًا
+        url_path=webhook_path,        
         webhook_url=webhook_url
     )
 
