@@ -7,28 +7,29 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from telegram.constants import ParseMode
 
-# === إعدادات البيئة ===
-# *التصحيح الرئيسي*: نستخدم 10000 كمنفذ افتراضي، لأنه هو المنفذ القياسي الذي تبحث عنه Render.
+# === إعدادات البيئة (قيم ثابتة لتجنب مشاكل التهيئة) ===
+# عنوان الخدمة على Render (الـ Hostname)
+RENDER_EXTERNAL_HOSTNAME = "botelegram-jco9.onrender.com" 
+# توكن البوت الخاص بك
+TOKEN = "7991401588:AAE3xrt1DPu0pIhb_wKXx0L6jn_gLy1srXI"
+
+# المنفذ: نستخدم 10000 كمنفذ افتراضي، لأنه هو المنفذ القياسي الذي تبحث عنه Render.
+# سيظل البوت يبحث أولاً عن متغير البيئة PORT
 LISTEN_PORT = int(os.environ.get('PORT', 10000))
 
-# اسم النطاق الخارجي (مثل: your-service-name.onrender.com)
-RENDER_EXTERNAL_HOSTNAME = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
-# توكن البوت
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 SUPPORT_EMAIL = "kaderezakariaa@gmail.com"
 
 # === إعدادات التسجيل (Logging) ===
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# التحقق من المتغيرات قبل الاستمرار
+# التحقق من وجود التوكن، بالرغم من أنه ثابت الآن
 if not TOKEN:
-    logger.error("خطأ فادح: لم يتم العثور على توكن البوت في متغيرات البيئة.")
+    logger.error("خطأ فادح: لم يتم العثور على توكن البوت.")
     sys.exit(1)
 
 # === البيانات والقيم الثابتة ===
-# ملاحظة: هذه الطريقة (user_balances كقاموس في الذاكرة) ستفقد جميع البيانات عند كل إعادة تشغيل.
-# يُفضل استخدام قاعدة بيانات (مثل PostgreSQL أو Redis) لحفظ أرصدة المستخدمين بشكل دائم.
+# ملاحظة: هذه البيانات (الأرصدة) ستُفقد عند كل إعادة تشغيل. استخدم قاعدة بيانات للاستمرارية.
 user_balances = {}
 PRICES = {'watch_video': 50, 'browse_web': 30, 'play_games': 20}
 MIN_WITHDRAWAL = 500
@@ -48,7 +49,6 @@ def get_main_keyboard() -> InlineKeyboardMarkup:
 # === معالجات الأوامر والردود التلقائية ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """معالج أمر /start."""
-    # نستخدم update.effective_chat للتأكد من الحصول على الدردشة سواء كانت رسالة أو استدعاء زر
     chat = update.effective_chat
     if not chat:
         return
@@ -61,7 +61,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message_text = f"""مرحباً بك! رصيدك الحالي هو: **{balance} د.ج**.
 اختر الخدمة التي تريدها:"""
     
-    # نستخدم chat.send_message بدلاً من reply_text في حالة الـ webhook
+    # نستخدم context.bot.send_message
     await context.bot.send_message(
         chat_id=chat.id, 
         text=message_text, 
@@ -110,7 +110,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.edit_message_text(message, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
         
     elif data == 'request_withdrawal':
-        # يفضل هنا إضافة منطق لتخزين الطلب ومعالجة السحب
         await query.edit_message_text("✅ تم تسجيل طلب السحب! سيتم التواصل معك قريباً على حسابك في تيليجرام لإتمام عملية الدفع.")
         
     elif data == 'support_contact':
@@ -134,18 +133,14 @@ application.add_handler(CallbackQueryHandler(handle_callback))
 
 # === دالة التشغيل الرئيسية ===
 def main() -> None:
-    """يبدأ تشغيل البوت باستخدام الـ Webhook ويضمن استخدام HTTPS والمنفذ الصحيح."""
+    """يبدأ تشغيل البوت باستخدام الـ Webhook."""
     
-    if not RENDER_EXTERNAL_HOSTNAME:
-        logger.error("خطأ: لم يتم العثور على RENDER_EXTERNAL_HOSTNAME. الرجاء تعيينه في إعدادات Render.")
-        sys.exit(1)
+    # لم نعد بحاجة للتحقق من RENDER_EXTERNAL_HOSTNAME لأنه ثابت الآن
         
-    # *تعديل*: التأكد من أن url_path هو مسار سري وليس بالضرورة التوكن الكامل،
-    # لكن سنبقي على التوكن لأن كودك استخدمه.
     webhook_path = TOKEN
+    # نضمن استخدام https لتجنب الخطأ السابق
     webhook_url = f"https://{RENDER_EXTERNAL_HOSTNAME}"
     
-    # استخدام LISTEN_PORT المُعدَّل
     logger.info(f"بدء تشغيل البوت على Webhook: {webhook_url}/{webhook_path}، منفذ الاستماع: {LISTEN_PORT}")
     
     application.run_webhook(
