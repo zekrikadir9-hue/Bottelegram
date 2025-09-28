@@ -8,8 +8,10 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 from telegram.constants import ParseMode
 
 # === إعدادات البيئة ===
-# يتم تعيين PORT تلقائياً على Render
-PORT = int(os.environ.get('PORT', 8080))
+# الحل: يجب أن يقرأ البوت المنفذ الفعلي الذي توفره البيئة، والذي قد يكون 10000.
+# إذا كان متغير البيئة PORT موجودًا، سيتم استخدامه. وإلا فسيستخدم 8080 كافتراضي.
+LISTEN_PORT = int(os.environ.get('PORT', 8080))
+
 # اسم النطاق الخارجي (مثل: your-service-name.onrender.com)
 RENDER_EXTERNAL_HOSTNAME = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
 # توكن البوت
@@ -25,7 +27,6 @@ if not TOKEN:
     sys.exit(1)
 
 # === البيانات والقيم الثابتة ===
-# للتخزين المؤقت، (هذه البيانات ستُمسح عند إعادة تشغيل الخادم، يفضل استخدام قاعدة بيانات)
 user_balances = {}
 PRICES = {'watch_video': 50, 'browse_web': 30, 'play_games': 20}
 MIN_WITHDRAWAL = 500
@@ -78,7 +79,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         message = f"""✅ تم تفعيل الخدمة بنجاح!
 {messages.get(service_key, '')}
 رصيدك الجديد: **{new_balance} د.ج**."""
-        await query.edit_message_text(message, parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_keyboard()) # تم التعديل لإعادة لوحة المفاتيح
+        await query.edit_message_text(message, parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_keyboard())
         
     elif data == 'show_balance':
         balance = user_balances.get(user_id, 0)
@@ -97,7 +98,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.edit_message_text(message, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
         
     elif data == 'request_withdrawal':
-        # في تطبيق واقعي، يجب هنا تسجيل الطلب في قاعدة بيانات
         await query.edit_message_text("✅ تم تسجيل طلب السحب! سيتم التواصل معك قريباً على حسابك في تيليجرام لإتمام عملية الدفع.")
         
     elif data == 'support_contact':
@@ -121,23 +121,22 @@ application.add_handler(CallbackQueryHandler(handle_callback))
 
 # === دالة التشغيل الرئيسية ===
 def main() -> None:
-    """يبدأ تشغيل البوت باستخدام الـ Webhook ويضمن استخدام HTTPS."""
+    """يبدأ تشغيل البوت باستخدام الـ Webhook ويضمن استخدام HTTPS والمنفذ الصحيح."""
+    
     if not RENDER_EXTERNAL_HOSTNAME:
         logger.error("خطأ: لم يتم العثور على RENDER_EXTERNAL_HOSTNAME. الرجاء تعيينه في إعدادات Render.")
         sys.exit(1)
         
-    # بناء رابط الـ Webhook الصحيح والآمن (HTTPS)
-    # المكتبة ستقوم بدمج هذا الرابط مع المسار السري (TOKEN) وتعيينه تلقائياً.
     webhook_url = f"https://{RENDER_EXTERNAL_HOSTNAME}"
 
-    logger.info(f"بدء تشغيل البوت على Webhook: {webhook_url}/{TOKEN}")
+    # استخدام LISTEN_PORT المُعرَّف في بداية الكود 
+    logger.info(f"بدء تشغيل البوت على Webhook: {webhook_url}/{TOKEN}، منفذ الاستماع: {LISTEN_PORT}")
     
-    # استخدام run_webhook لتشغيل الخادم وتعيين الـ Webhook في تليجرام تلقائياً
     application.run_webhook(
         listen='0.0.0.0',
-        port=PORT,
-        url_path=TOKEN,        # المسار السري (endpoint) الذي يستقبل الرسائل
-        webhook_url=webhook_url  # الرابط الأساسي الذي يتم إرساله لتليجرام (يجب أن يكون HTTPS)
+        port=LISTEN_PORT,     # تم التعديل لاستخدام LISTEN_PORT
+        url_path=TOKEN,        
+        webhook_url=webhook_url
     )
 
 if __name__ == '__main__':
