@@ -8,31 +8,36 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 from telegram.constants import ParseMode
 
 # === إعدادات البيئة (قيم ثابتة لتجنب مشاكل التهيئة) ===
-# عنوان الخدمة على Render (الـ Hostname)
 RENDER_EXTERNAL_HOSTNAME = "botelegram-jco9.onrender.com" 
-# توكن البوت الخاص بك
 TOKEN = "7991401588:AAE3xrt1DPu0pIhb_wKXx0L6jn_gLy1srXI"
-
-# المنفذ: نستخدم 10000 كمنفذ افتراضي، لأنه هو المنفذ القياسي الذي تبحث عنه Render.
-# سيظل البوت يبحث أولاً عن متغير البيئة PORT
 LISTEN_PORT = int(os.environ.get('PORT', 10000))
-
 SUPPORT_EMAIL = "kaderezakariaa@gmail.com"
 
 # === إعدادات التسجيل (Logging) ===
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# التحقق من وجود التوكن، بالرغم من أنه ثابت الآن
 if not TOKEN:
     logger.error("خطأ فادح: لم يتم العثور على توكن البوت.")
     sys.exit(1)
 
 # === البيانات والقيم الثابتة ===
-# ملاحظة: هذه البيانات (الأرصدة) ستُفقد عند كل إعادة تشغيل. استخدم قاعدة بيانات للاستمرارية.
 user_balances = {}
 PRICES = {'watch_video': 50, 'browse_web': 30, 'play_games': 20}
 MIN_WITHDRAWAL = 500
+
+# **** الروابط المضافة حديثاً والمحدثة ****
+LINKS = {
+    # الرابط الأول (مشاهدة الفيديوهات)
+    'watch_video': "https://youtu.be/vKeXLRNvwgM?si=bGKDoprm1pbhFBMq", 
+    
+    # الرابط الثاني (تم استخدامه لـ تصفح المواقع مؤقتاً)
+    'browse_web': "https://youtu.be/m6zIFRjlg28?si=x3lvxKGJM5HA58S-",       
+    
+    # رابط وهمي: يجب استبداله برابط الألعاب الفعلي
+    'play_games': "https://example.com/games-algeria/please-update",  
+}
+# ********************************
 
 # === الدوال المساعدة ===
 def get_main_keyboard() -> InlineKeyboardMarkup:
@@ -61,7 +66,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message_text = f"""مرحباً بك! رصيدك الحالي هو: **{balance} د.ج**.
 اختر الخدمة التي تريدها:"""
     
-    # نستخدم context.bot.send_message
     await context.bot.send_message(
         chat_id=chat.id, 
         text=message_text, 
@@ -79,19 +83,33 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if data.startswith('service_'):
         service_key = data.replace('service_', '')
         price = PRICES.get(service_key, 0)
+        link = LINKS.get(service_key, "#") # الحصول على الرابط
+        
         user_balances[user_id] = user_balances.get(user_id, 0) + price
         new_balance = user_balances[user_id]
         
-        messages = {
-            'watch_video': f"تمت إضافة **{price} د.ج** إلى رصيدك. ابدأ مشاهدة الفيديو الآن.",
-            'browse_web': f"تمت إضافة **{price} د.ج** إلى رصيدك. تفضل برابط تصفح المواقع.",
-            'play_games': f"تمت إضافة **{price} د.ج** إلى رصيدك. إليك رابط الألعاب المصغرة."
-        }
+        service_name = ""
+        if service_key == 'watch_video':
+             service_name = "مشاهدة الفيديو"
+        elif service_key == 'browse_web':
+             service_name = "تصفح المواقع"
+        elif service_key == 'play_games':
+             service_name = "الألعاب المصغرة"
+             
+        # إنشاء لوحة مفاتيح مخصصة لكل خدمة
+        service_keyboard = [
+            [InlineKeyboardButton(f"🔗 الانتقال إلى {service_name}", url=link)],
+            [InlineKeyboardButton("🔄 العودة للقائمة الرئيسية", callback_data='return_to_menu')]
+        ]
         
-        message = f"""✅ تم تفعيل الخدمة بنجاح!
-{messages.get(service_key, '')}
+        message = f"""✅ تم تفعيل الخدمة بنجاح وتمت إضافة **{price} د.ج** إلى رصيدك!
 رصيدك الجديد: **{new_balance} د.ج**."""
-        await query.edit_message_text(message, parse_mode=ParseMode.MARKDOWN, reply_markup=get_main_keyboard())
+
+        await query.edit_message_text(
+            message, 
+            parse_mode=ParseMode.MARKDOWN, 
+            reply_markup=InlineKeyboardMarkup(service_keyboard)
+        )
         
     elif data == 'show_balance':
         balance = user_balances.get(user_id, 0)
@@ -135,17 +153,14 @@ application.add_handler(CallbackQueryHandler(handle_callback))
 def main() -> None:
     """يبدأ تشغيل البوت باستخدام الـ Webhook."""
     
-    # لم نعد بحاجة للتحقق من RENDER_EXTERNAL_HOSTNAME لأنه ثابت الآن
-        
     webhook_path = TOKEN
-    # نضمن استخدام https لتجنب الخطأ السابق
     webhook_url = f"https://{RENDER_EXTERNAL_HOSTNAME}"
     
     logger.info(f"بدء تشغيل البوت على Webhook: {webhook_url}/{webhook_path}، منفذ الاستماع: {LISTEN_PORT}")
     
     application.run_webhook(
         listen='0.0.0.0',
-        port=LISTEN_PORT,     # الآن هو 10000 افتراضيًا
+        port=LISTEN_PORT,
         url_path=webhook_path,        
         webhook_url=webhook_url
     )
